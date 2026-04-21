@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LeadLens</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <!-- ==================== HEADER ==================== -->
+  <header id="header">
+    <div class="header-left">
+      <img src="../assets/icons/icon48.png" alt="LeadLens" class="header-icon" />
+      <h1 class="header-title">LeadLens</h1>
+    </div>
+    <button id="signOutBtn" class="sign-out-btn" title="Sign Out">Sign Out</button>
+  </header>
+
+  <!-- ==================== MAIN CONTENT ==================== -->
+  <main id="mainContent">
+    <!-- Error state: not on Instagram profile -->
+    <div id="errorState" class="error-state hidden">
+      <div class="error-icon">⚠️</div>
+      <p class="error-message">Please navigate to an Instagram profile page to use LeadLens.</p>
+    </div>
+
+    <!-- Profile data form -->
+    <div id="profileForm" class="hidden">
+      <!-- Section 1: Auto-Scraped Data (read-only) -->
+      <section class="form-section">
+        <h2 class="section-title">
+          <span class="section-icon">🔍</span>
+          Auto-Scraped Data
+        </h2>
+
+        <div class="field-group">
+          <label for="username">Username</label>
+          <input type="text" id="username" readonly placeholder="Not found" />
+        </div>
+
+        <div class="field-group">
+          <label for="profileUrl">Profile URL</label>
+          <input type="text" id="profileUrl" readonly placeholder="Not found" />
+        </div>
+
+        <div class="field-group">
+          <label for="fullName">Full Name</label>
+          <input type="text" id="fullName" readonly placeholder="Not found" />
+        </div>
+
+        <div class="field-group">
+          <label for="followerCount">Follower Count</label>
+          <div class="follower-row">
+            <input type="text" id="followerCount" readonly placeholder="Not found" />
+            <span id="tierBadge" class="tier-badge hidden">—</span>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label for="bio">Bio</label>
+          <textarea id="bio" readonly rows="3" placeholder="Not found"></textarea>
+        </div>
+
+        <div class="field-group">
+          <label for="email">Email</label>
+          <input type="text" id="email" readonly placeholder="Not found" />
+        </div>
+
+        <div class="field-group">
+          <label for="phone">Phone</label>
+          <input type="text" id="phone" readonly placeholder="Not found" />
+        </div>
+      </section>
+
+      <!-- Section 2: User-Editable Fields -->
+      <section class="form-section editable-section">
+        <h2 class="section-title">
+          <span class="section-icon">✏️</span>
+          You Fill In
+        </h2>
+
+        <div class="field-group">
+          <label for="niche">Niche / Category</label>
+          <select id="niche">
+            <option value="">— Select a niche —</option>
+            <!-- Options populated dynamically from NICHES constant -->
+          </select>
+        </div>
+
+        <div class="field-group">
+          <label for="location">Location</label>
+          <input type="text" id="location" placeholder="e.g. Los Angeles, CA" />
+        </div>
+
+        <div class="field-group">
+          <label for="notes">Notes / Remarks</label>
+          <textarea id="notes" rows="3" placeholder="Add any notes about this lead..."></textarea>
+        </div>
+      </section>
+
+      <!-- Save Button -->
+      <button id="saveBtn" class="save-btn">
+        <span class="save-btn-text">Save Lead</span>
+        <span id="saveBtnSpinner" class="spinner hidden"></span>
+      </button>
+
+      <!-- Status Bar -->
+      <div id="statusBar" class="status-bar hidden">
+        <span id="statusMessage"></span>
+      </div>
+
+      <!-- Duplicate Warning Modal -->
+      <div id="duplicateModal" class="modal hidden">
+        <div class="modal-content">
+          <div class="modal-icon">⚠️</div>
+          <p class="modal-message">This profile has already been saved as a lead.</p>
+          <p class="modal-sub">Do you want to save it again?</p>
+          <div class="modal-actions">
+            <button id="modalCancel" class="modal-btn cancel">Cancel</button>
+            <button id="modalConfirm" class="modal-btn confirm">Save Anyway</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="popup.js" type="module"></script>
+</body>
+</html>
