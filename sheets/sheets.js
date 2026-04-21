@@ -9,7 +9,7 @@ import { SHEET_ID, SHEET_RANGE } from "../config/constants.js";
 /**
  * Appends a lead's data as a new row in the Google Sheet.
  * The row follows this exact column order:
- *   A: Date Added (ISO timestamp)
+ *   A: Date Added (YYYY-MM-DD)
  *   B: Username
  *   C: Profile URL
  *   D: Full Name
@@ -37,7 +37,7 @@ export async function appendLead(token, leadData) {
 
   // Build the row array in the exact column order expected by the sheet
   const rowArray = [
-    new Date().toISOString(),                     // A: Date Added
+    new Date().toISOString().slice(0, 10),        // A: Date Added (date only)
     leadData.username || "",                       // B: Username
     leadData.profileUrl || "",                     // C: Profile URL
     leadData.fullName || "",                       // D: Full Name

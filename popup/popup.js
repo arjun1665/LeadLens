@@ -364,8 +364,19 @@ signOutBtn.addEventListener("click", () => {
 // Listen for scraped data messages (proactive send from content script)
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "SCRAPED_DATA" && message.data) {
-    populateFields(message.data);
-    showForm();
+    chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+      const activeUrl = tab?.url || "";
+      const activeMatch = activeUrl.match(/^https:\/\/www\.instagram\.com\/([^/?#]+)\/?/i);
+      const activeUsername = activeMatch?.[1]?.toLowerCase();
+      const messageUsername = message.data.username?.toLowerCase();
+
+      if (activeUsername && messageUsername && activeUsername !== messageUsername) {
+        return;
+      }
+
+      populateFields(message.data);
+      showForm();
+    });
   }
 });
 

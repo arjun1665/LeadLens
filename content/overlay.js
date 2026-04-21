@@ -89,18 +89,152 @@
     return null;
   }
 
+  function extractFollowerCountToken(text) {
+    if (!text) return null;
+
+    const trimmed = String(text).trim();
+    const followerLabelMatch = trimmed.match(/([\d,.]+\s*[KkMm]?)\s*followers?/i);
+    if (followerLabelMatch?.[1]) return followerLabelMatch[1].replace(/\s+/g, "");
+
+    if (/^[\d,.]+\s*[KkMm]?$/.test(trimmed)) {
+      return trimmed.replace(/\s+/g, "");
+    }
+
+    return null;
+  }
+
+  function cleanFullNameCandidate(value, username) {
+    if (!value) return null;
+
+    const firstLine = String(value)
+      .replace(/\r/g, "\n")
+      .split("\n")
+      .map((line) => line.trim())
+      .find(Boolean) || "";
+
+    let text = firstLine
+      .replace(/["'“”]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (username) {
+      const escapedUsername = username.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      text = text
+        .replace(new RegExp(`\\(@${escapedUsername}\\)`, "ig"), "")
+        .replace(new RegExp(`(^|\\s)@${escapedUsername}(\\s|$)`, "ig"), " ")
+        .trim();
+    }
+
+    text = text.split("|")[0].split("•")[0].trim();
+
+    if (!text || text.length < 2 || text.length > 80) return null;
+    if (/instagram|followers?|following|posts?|message|follow|edit profile|contact|shop|professional|followed by|more/i.test(text)) return null;
+    if (/^(link icon|profile picture|account icon|open app|open profile|see translation)$/i.test(text)) return null;
+    if (/^(community|digital creator|creator|public figure|athlete|artist|musician\/band|personal blog|entrepreneur)$/i.test(text)) return null;
+    const isExactUsername = Boolean(username && text.toLowerCase() === username.toLowerCase());
+    if (/^[\d,.\sKkMm]+$/.test(text) && !isExactUsername) return null;
+    if (/^\d+\s*(post|posts)?$/i.test(text)) return null;
+    if (!/\p{L}/u.test(text) && !isExactUsername) return null;
+    if (text.split(/\s+/).length > 8) return null;
+    if (text.startsWith("@")) return null;
+
+    return text;
+  }
+
+  function getProfileSnapshotFromScripts(username) {
+    if (!username) return { fullName: null, followerCountRaw: null };
+
+    const scripts = document.querySelectorAll("script");
+    const escapedUsername = username.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+    const decodeJsonEscaped = (value) => {
+      if (!value) return null;
+      try {
+        return JSON.parse(`"${value}"`).trim() || null;
+      } catch {
+        return null;
+      }
+    };
+
+    for (const script of scripts) {
+      const text = script.textContent || "";
+      if (!text.includes(`"username":"${username}"`)) continue;
+
+      const fullNamePatterns = [
+        new RegExp(`"username":"${escapedUsername}"[\\s\\S]{0,12000}?"full_name":"((?:\\\\.|[^"\\\\])*)"`),
+        new RegExp(`"full_name":"((?:\\\\.|[^"\\\\])*)"[\\s\\S]{0,12000}?"username":"${escapedUsername}"`),
+      ];
+
+      const followerPatterns = [
+        new RegExp(`"username":"${escapedUsername}"[\\s\\S]{0,12000}?"edge_followed_by":\\{[^}]*?"count":(\\d+)`),
+        new RegExp(`"edge_followed_by":\\{[^}]*?"count":(\\d+)[\\s\\S]{0,12000}?"username":"${escapedUsername}"`),
+        new RegExp(`"username":"${escapedUsername}"[\\s\\S]{0,12000}?"follower_count":(\\d+)`),
+        new RegExp(`"follower_count":(\\d+)[\\s\\S]{0,12000}?"username":"${escapedUsername}"`),
+      ];
+
+      const fullNameMatch = fullNamePatterns
+        .map((pattern) => text.match(pattern))
+        .find((match) => match?.[1]);
+      const fullName = cleanFullNameCandidate(decodeJsonEscaped(fullNameMatch?.[1]), username);
+
+      const followerMatch = followerPatterns
+        .map((pattern) => text.match(pattern))
+        .find((match) => match?.[1]);
+
+      const followerCountRaw = followerMatch?.[1]
+        ? Number(followerMatch[1]).toLocaleString("en-US")
+        : null;
+
+      if (fullName || followerCountRaw) {
+        return { fullName, followerCountRaw };
+      }
+    }
+
+    return { fullName: null, followerCountRaw: null };
+  }
+
   function getFullName() {
+    const username = getUsername();
     const ogTitle = document.querySelector('meta[property="og:title"]');
     if (ogTitle) {
       const content = ogTitle.getAttribute("content");
       if (content) {
         const match = content.match(/^(.+?)\s*\(@/);
-        if (match) return match[1].trim();
-        const simpleName = content.split("•")[0].trim();
+        if (match) {
+          const cleanMatch = cleanFullNameCandidate(match[1], username);
+          if (cleanMatch) return cleanMatch;
+        }
+        const simpleName = cleanFullNameCandidate(content.split("•")[0], username);
         if (simpleName) return simpleName;
       }
     }
-    return null;
+
+    const scriptSnapshot = getProfileSnapshotFromScripts(username);
+    if (scriptSnapshot.fullName) return scriptSnapshot.fullName;
+
+    const ogDescription = getOgDescriptionContent();
+    if (ogDescription) {
+      const escapedUsername = username ? username.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") : null;
+      const pattern = escapedUsername
+        ? new RegExp(`from\\s+([^\\n]+?)\\s*\\(@${escapedUsername}\\)`, "i")
+        : /from\s+([^\n]+?)\s*\(@[^)]+\)/i;
+      const match = ogDescription.match(pattern);
+      const fromOgDescription = cleanFullNameCandidate(match?.[1], username);
+      if (fromOgDescription) return fromOgDescription;
+    }
+
+    const headerSection = document.querySelector("header");
+    if (headerSection) {
+      const nodes = headerSection.querySelectorAll("h1, h2, span");
+      for (const node of nodes) {
+        const candidate = cleanFullNameCandidate(node.textContent, username);
+        if (!candidate) continue;
+        if (/follow|message|edit profile|contact|shop|professional/i.test(candidate)) continue;
+        return candidate;
+      }
+    }
+
+    return username || null;
   }
 
   function getOgDescriptionContent() {
@@ -150,7 +284,39 @@
     if (!candidate) return null;
     if (/^(followers?|following|posts?)\b/i.test(candidate)) return null;
 
-    return candidate;
+    return dedupeBioText(candidate);
+  }
+
+  function dedupeBioText(text) {
+    if (!text || typeof text !== "string") return null;
+
+    const rawLines = text
+      .replace(/\r/g, "\n")
+      .split(/\n+/)
+      .map((line) => line.replace(/\s+/g, " ").trim())
+      .filter(Boolean);
+
+    if (rawLines.length === 0) return null;
+
+    const uniqueLines = [];
+    const seen = new Set();
+    for (const line of rawLines) {
+      const key = line.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      uniqueLines.push(line);
+    }
+
+    if (uniqueLines.length % 2 === 0) {
+      const half = uniqueLines.length / 2;
+      const firstHalf = uniqueLines.slice(0, half).join("\n").toLowerCase();
+      const secondHalf = uniqueLines.slice(half).join("\n").toLowerCase();
+      if (firstHalf && firstHalf === secondHalf) {
+        return uniqueLines.slice(0, half).join("\n");
+      }
+    }
+
+    return uniqueLines.join("\n");
   }
 
   function getBioFromOgDescription() {
@@ -206,10 +372,10 @@
         const text = script.textContent || "";
 
         const nearUsernameBio = new RegExp(
-          `"username":"${escapedUsername}"[\\s\\S]{0,6000}?"biography":"((?:\\\\.|[^"\\\\])*)"`
+          `"username":"${escapedUsername}"[\\s\\S]{0,20000}?"biography":"((?:\\\\.|[^"\\\\])*)"`
         );
         const nearUsernameRawBio = new RegExp(
-          `"username":"${escapedUsername}"[\\s\\S]{0,6000}?"biography_with_entities":\\{[\\s\\S]{0,500}?"raw_text":"((?:\\\\.|[^"\\\\])*)"`
+          `"username":"${escapedUsername}"[\\s\\S]{0,20000}?"biography_with_entities":\\{[\\s\\S]{0,4000}?"raw_text":"((?:\\\\.|[^"\\\\])*)"`
         );
 
         const decodedNearUsername =
@@ -228,40 +394,87 @@
     const header = document.querySelector("main header") || document.querySelector("header");
     if (!header) return null;
 
-    const blacklist = /followers?|following|posts?|message|follow|edit profile|contact|shop/i;
-    const candidates = new Set();
-    const nodes = header.querySelectorAll("section span, section div, section h1, section a");
+    const isLikelyUiLine = (text) => {
+      const lower = text.toLowerCase();
+      const compact = lower.replace(/\s+/g, "");
 
-    for (const node of nodes) {
-      const rawText = node.textContent || "";
-      for (const line of rawText.split(/\r?\n/)) {
-        const text = line.trim();
-        if (!text) continue;
-        if (text.length < 3 || text.length > 300) continue;
-        if (blacklist.test(text)) continue;
-        if (username && text.toLowerCase() === username.toLowerCase()) continue;
-        if (fullName && text.toLowerCase() === fullName.toLowerCase()) continue;
-        if (text.startsWith("@")) continue;
-        if (/^[\d,.]+[KkMm]?$/.test(text)) continue;
-        candidates.add(text);
+      if (["verified", "options", "verifiedoptions"].includes(compact)) return true;
+      if (/^hypewhipverified(options)?$/i.test(compact)) return true;
+      if (/^\d+[,.\d]*[kKmM]?\s*(followers?|following|posts?)$/.test(lower)) return true;
+      if (/^followed by\b/i.test(lower)) return true;
+
+      const uiWordPattern = /\b(verified|options|follow|message|contact|shop|insights|threads|professional|similar accounts)\b/i;
+      const hasBioSignal = /@|https?:\/\/|\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b/i.test(text);
+      return uiWordPattern.test(text) && text.length <= 50 && !hasBioSignal;
+    };
+
+    const normalizeBioLines = (rawText) => {
+      const seen = new Set();
+      const out = [];
+
+      for (const rawLine of String(rawText || "").split(/\r?\n/)) {
+        const line = rawLine.replace(/\s+/g, " ").trim();
+        if (!line) continue;
+        if (line.length < 2 || line.length > 220) continue;
+        if (isLikelyUiLine(line)) continue;
+        if (username && line.toLowerCase() === username.toLowerCase()) continue;
+        if (fullName && line.toLowerCase() === fullName.toLowerCase()) continue;
+        if (/^[\d,.]+[KkMm]?$/.test(line)) continue;
+        if (/^(community|digital creator|creator|public figure|athlete|artist)$/i.test(line)) continue;
+
+        const isExactUsername = Boolean(username && line.toLowerCase() === username.toLowerCase());
+        if (!/\p{L}/u.test(line) && !isExactUsername) continue;
+        // Story highlight labels tend to be short one-token text (e.g., ARS...SPO).
+        if (
+          line.length <= 12 &&
+          !/\s/.test(line) &&
+          !/@|https?:\/\/|\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b/i.test(line)
+        ) {
+          continue;
+        }
+
+        const key = line.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(line);
       }
-    }
 
-    const joined = Array.from(candidates).slice(0, 4).join("\n").trim();
-    if (joined) return joined;
+      return out;
+    };
 
-    const lineCandidates = (header.innerText || "")
+    const scoreBioLines = (lines) => {
+      if (!lines.length) return 0;
+      let score = lines.length * 2;
+      for (const line of lines) {
+        if (/@|https?:\/\//i.test(line)) score += 2;
+        if (/\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b/i.test(line)) score += 2;
+        if (/\+?\d[\d\s\-().]{7,}\d/.test(line)) score += 1;
+      }
+      return score;
+    };
+
+    const headerLines = (header.innerText || "")
       .split(/\r?\n/)
       .map((line) => line.trim())
-      .filter(Boolean)
-      .filter((line) => line.length >= 3 && line.length <= 300)
-      .filter((line) => !blacklist.test(line))
-      .filter((line) => !(username && line.toLowerCase() === username.toLowerCase()))
-      .filter((line) => !(fullName && line.toLowerCase() === fullName.toLowerCase()))
-      .filter((line) => !line.startsWith("@"))
-      .filter((line) => !/^[\d,.]+[KkMm]?$/.test(line));
+      .filter(Boolean);
 
-    return lineCandidates.slice(0, 4).join("\n") || null;
+    const actionLineIndex = headerLines.findIndex((line) =>
+      /^(follow|following|message|contact|email|edit profile|subscribed|subscribe)$/i.test(line)
+    );
+    const introLines = actionLineIndex > 0 ? headerLines.slice(0, actionLineIndex) : headerLines;
+
+    let bestLines = normalizeBioLines(introLines.join("\n"));
+
+    if (!bestLines.length) {
+      const firstSection = header.querySelector("section");
+      bestLines = normalizeBioLines(firstSection?.innerText || firstSection?.textContent || "");
+    }
+
+    if (!bestLines.length) {
+      bestLines = normalizeBioLines(header.innerText || "");
+    }
+
+    return bestLines.slice(0, 6).join("\n") || null;
   }
 
   function getHeaderTextForContactExtraction() {
@@ -273,15 +486,18 @@
     const username = getUsername();
     const fullName = getFullName();
 
-    return (
+    const bio = (
       getBioFromScripts(username) ||
       getBioFromOgDescription() ||
       getBioFromDom(username, fullName) ||
       null
     );
+
+    return dedupeBioText(bio);
   }
 
   function getFollowerCount() {
+    const username = getUsername();
     const ogDesc = document.querySelector('meta[property="og:description"]');
     if (ogDesc) {
       const content = ogDesc.getAttribute("content");
@@ -290,19 +506,94 @@
         if (match) return match[1];
       }
     }
+
+    const scriptSnapshot = getProfileSnapshotFromScripts(username);
+    if (scriptSnapshot.followerCountRaw) return scriptSnapshot.followerCountRaw;
+
+    const followerLink = document.querySelector('header a[href$="/followers/"]');
+    if (followerLink) {
+      const titleToken = extractFollowerCountToken(followerLink.getAttribute("title"));
+      if (titleToken) return titleToken;
+
+      const ariaToken = extractFollowerCountToken(followerLink.getAttribute("aria-label"));
+      if (ariaToken) return ariaToken;
+
+      const textToken = extractFollowerCountToken(followerLink.textContent);
+      if (textToken) return textToken;
+    }
+
+    const allElements = document.querySelectorAll("a, span, li");
+    for (const el of allElements) {
+      const text = el.textContent.trim().toLowerCase();
+      if (!text.includes("follower")) continue;
+
+      const numToken = extractFollowerCountToken(el.textContent);
+      if (numToken) return numToken;
+
+      const titleToken = extractFollowerCountToken(el.getAttribute("title"));
+      if (titleToken) return titleToken;
+    }
+
     return null;
   }
 
   function extractEmail(text) {
     if (!text) return null;
-    const match = text.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/);
-    return match ? match[0] : null;
+
+    const emailRegex = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,24}/g;
+    const matches = text.match(emailRegex);
+    if (!matches) return null;
+
+    for (const match of matches) {
+      const candidate = match.replace(/[.,;:!?]+$/, "").trim();
+      const isValid =
+        /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,24}$/.test(candidate) &&
+        !candidate.includes("..") &&
+        !candidate.startsWith(".") &&
+        !candidate.endsWith(".");
+
+      if (isValid) {
+        return candidate.toLowerCase();
+      }
+    }
+
+    return null;
   }
 
   function extractPhone(text) {
     if (!text) return null;
-    const match = text.match(/(\+?\d[\d\s\-().]{7,}\d)/);
-    return match ? match[1].trim() : null;
+
+    const contactKeywordRegex = /\b(phone|mobile|mob|call|contact|whatsapp|wa|tel)\b/i;
+    const phonePattern = /(\+?\d[\d\s\-().]{8,}\d)/g;
+
+    const normalizePhone = (raw, allowPlainTenDigit) => {
+      if (!raw) return null;
+      const candidate = raw.trim().replace(/[.,;:!?]+$/, "");
+      const digitsOnly = candidate.replace(/\D/g, "");
+
+      if (digitsOnly.length < 10 || digitsOnly.length > 15) return null;
+      if (/^(\d)\1+$/.test(digitsOnly)) return null;
+
+      const hasFormatSignal = /[+()\-\s]/.test(candidate);
+      if (!allowPlainTenDigit && !hasFormatSignal) return null;
+
+      return candidate.startsWith("+") ? `+${digitsOnly}` : digitsOnly;
+    };
+
+    // Only accept numbers from lines that signal contact intent.
+    const lines = text.split(/\r?\n/);
+    for (const line of lines) {
+      if (!contactKeywordRegex.test(line)) continue;
+
+      phonePattern.lastIndex = 0;
+      let match;
+      while ((match = phonePattern.exec(line)) !== null) {
+        const normalized = normalizePhone(match[1], true);
+        if (normalized) return normalized;
+      }
+    }
+
+    return null;
   }
 
   function scrapeProfile() {
@@ -954,6 +1245,72 @@
   let currentScrapedData = {};
   let parsedFollowerCount = null;
   let followerTier = "Unknown";
+  let scrapeRequestSeq = 0;
+
+  function hasReadyProfileData(data) {
+    if (!data) return false;
+    const expectedUsername = getUsername();
+    if (
+      expectedUsername &&
+      data.username &&
+      data.username.toLowerCase() !== expectedUsername.toLowerCase()
+    ) {
+      return false;
+    }
+
+    const headerText = (document.querySelector("main header")?.innerText || document.querySelector("header")?.innerText || "").toLowerCase();
+    if (expectedUsername && headerText && !headerText.includes(expectedUsername.toLowerCase())) {
+      return false;
+    }
+
+    return Boolean(data.fullName && data.followerCountRaw);
+  }
+
+  function wait(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async function scrapeProfileWithRetry(options = {}) {
+    const attempts = options.attempts ?? 10;
+    const delayMs = options.delayMs ?? 350;
+    const expectedUsername = options.expectedUsername ?? getUsername();
+
+    let latest = scrapeProfile();
+    if (hasReadyProfileData(latest, expectedUsername)) return latest;
+
+    for (let i = 1; i < attempts; i++) {
+      await wait(delayMs);
+      latest = scrapeProfile();
+      if (hasReadyProfileData(latest, expectedUsername)) {
+        return latest;
+      }
+    }
+
+    return latest;
+  }
+
+  function isEditableElement(element) {
+    if (!element || !(element instanceof Element)) return false;
+    if (element.matches('input:not([readonly]), textarea:not([readonly]), select')) return true;
+    return element.isContentEditable === true;
+  }
+
+  function setupKeyboardIsolation() {
+    const panel = shadowRoot.getElementById("leadlens-panel");
+    if (!panel) return;
+
+    const stopShortcutPropagation = (event) => {
+      if (!isPanelOpen) return;
+      if (!isEditableElement(event.target)) return;
+
+      // Let the user type normally, but block page-level shortcut handlers.
+      event.stopPropagation();
+    };
+
+    panel.addEventListener("keydown", stopShortcutPropagation, true);
+    panel.addEventListener("keyup", stopShortcutPropagation, true);
+    panel.addEventListener("keypress", stopShortcutPropagation, true);
+  }
 
   /**
    * Creates the overlay UI (FAB button + panel) using Shadow DOM.
@@ -1006,6 +1363,7 @@
 
     // Set up event listeners on panel elements
     setupPanelListeners();
+    setupKeyboardIsolation();
   }
 
   /**
@@ -1080,8 +1438,20 @@
   /**
    * Scrapes the current profile and populates form fields.
    */
-  function scrapeAndPopulate() {
-    const data = scrapeProfile();
+  async function scrapeAndPopulate() {
+    const requestSeq = ++scrapeRequestSeq;
+    const expectedUsername = getUsername();
+    const data = await scrapeProfileWithRetry({ attempts: 10, delayMs: 350, expectedUsername });
+    if (requestSeq !== scrapeRequestSeq) return;
+    if (!isPanelOpen || !shadowRoot) return;
+    if (
+      expectedUsername &&
+      data.username &&
+      data.username.toLowerCase() !== expectedUsername.toLowerCase()
+    ) {
+      return;
+    }
+
     currentScrapedData = data;
 
     const $ = (id) => shadowRoot.getElementById(id);
