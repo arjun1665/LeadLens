@@ -35,20 +35,24 @@ export async function appendLead(token, leadData) {
     );
   }
 
-  // Build the row array in the exact column order expected by the sheet
+  // Build the row array in the exact column order expected by the sheet.
+  // If fullName is missing, fall back to the username.
+  // All other optional fields default to "not found" so the sheet is never blank.
+  const NOT_FOUND = "not found";
+
   const rowArray = [
-    new Date().toISOString().slice(0, 10),        // A: Date Added (date only)
-    leadData.username || "",                       // B: Username
-    leadData.profileUrl || "",                     // C: Profile URL
-    leadData.fullName || "",                       // D: Full Name
-    leadData.followerCount || "",                  // E: Follower Count (numeric)
-    leadData.followerTier || "",                   // F: Follower Tier
-    leadData.bio || "",                            // G: Bio
-    leadData.email || "",                          // H: Email
-    leadData.phone || "",                          // I: Phone
-    leadData.niche || "",                          // J: Niche / Category
-    leadData.location || "",                       // K: Location
-    leadData.notes || "",                          // L: Notes / Remarks
+    new Date().toISOString().slice(0, 10),                       // A: Date Added (date only)
+    leadData.username || NOT_FOUND,                              // B: Username
+    leadData.profileUrl || NOT_FOUND,                            // C: Profile URL
+    leadData.fullName || leadData.username || NOT_FOUND,         // D: Full Name (fallback to username)
+    leadData.followerCount || NOT_FOUND,                         // E: Follower Count (numeric)
+    leadData.followerTier || NOT_FOUND,                          // F: Follower Tier
+    leadData.bio || NOT_FOUND,                                   // G: Bio
+    leadData.email || NOT_FOUND,                                 // H: Email
+    leadData.phone || NOT_FOUND,                                 // I: Phone
+    leadData.niche || NOT_FOUND,                                 // J: Niche / Category
+    leadData.location || NOT_FOUND,                              // K: Location
+    leadData.notes || NOT_FOUND,                                 // L: Notes / Remarks
   ];
 
   // Construct the Sheets API endpoint URL

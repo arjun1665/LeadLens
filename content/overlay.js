@@ -1454,6 +1454,10 @@
 
     currentScrapedData = data;
 
+    // Reset follower state so stale values from a previous profile never leak through.
+    parsedFollowerCount = null;
+    followerTier = "Unknown";
+
     const $ = (id) => shadowRoot.getElementById(id);
 
     $("ll-username").value = data.username || "";
@@ -1473,6 +1477,8 @@
         badge.textContent = followerTier;
         badge.className = "ll-tier-badge";
         badge.classList.add(followerTier.toLowerCase());
+      } else {
+        $("ll-tierBadge").className = "ll-tier-badge hidden";
       }
     } else {
       $("ll-followerCount").value = "";
@@ -1528,18 +1534,23 @@
    */
   function buildLeadObject() {
     const $ = (id) => shadowRoot.getElementById(id);
+    const NOT_FOUND = "not found";
+
+    const username = $("ll-username").value;
+    const fullName = $("ll-fullName").value;
+
     return {
-      username: $("ll-username").value,
-      profileUrl: $("ll-profileUrl").value,
-      fullName: $("ll-fullName").value,
-      followerCount: parsedFollowerCount || $("ll-followerCount").value,
-      followerTier: followerTier,
-      bio: $("ll-bio").value,
-      email: $("ll-email").value,
-      phone: $("ll-phone").value,
-      niche: $("ll-niche").value,
-      location: $("ll-location").value,
-      notes: $("ll-notes").value,
+      username: username || NOT_FOUND,
+      profileUrl: $("ll-profileUrl").value || NOT_FOUND,
+      fullName: fullName || username || NOT_FOUND,
+      followerCount: parsedFollowerCount || $("ll-followerCount").value || NOT_FOUND,
+      followerTier: followerTier || NOT_FOUND,
+      bio: $("ll-bio").value || NOT_FOUND,
+      email: $("ll-email").value || NOT_FOUND,
+      phone: $("ll-phone").value || NOT_FOUND,
+      niche: $("ll-niche").value || NOT_FOUND,
+      location: $("ll-location").value || NOT_FOUND,
+      notes: $("ll-notes").value || NOT_FOUND,
     };
   }
 
@@ -1631,6 +1642,11 @@
         const fab = shadowRoot?.getElementById("leadlens-fab");
         if (fab) fab.style.display = "";
       }
+
+      // Reset stale follower data from the previous profile
+      parsedFollowerCount = null;
+      followerTier = "Unknown";
+      currentScrapedData = {};
 
       // If panel is open, re-scrape for the new profile
       if (isPanelOpen) {

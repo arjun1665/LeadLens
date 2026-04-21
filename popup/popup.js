@@ -256,18 +256,23 @@ function displayTierBadge(tier) {
  * @returns {Object} - The lead data ready for the Sheets API
  */
 function buildLeadObject() {
+  const NOT_FOUND = "not found";
+
+  const username = fields.username.value;
+  const fullName = fields.fullName.value;
+
   return {
-    username: fields.username.value,
-    profileUrl: fields.profileUrl.value,
-    fullName: fields.fullName.value,
-    followerCount: parsedFollowerCount || fields.followerCount.value,
-    followerTier: followerTier,
-    bio: fields.bio.value,
-    email: fields.email.value,
-    phone: fields.phone.value,
-    niche: fields.niche.value,
-    location: fields.location.value,
-    notes: fields.notes.value,
+    username: username || NOT_FOUND,
+    profileUrl: fields.profileUrl.value || NOT_FOUND,
+    fullName: fullName || username || NOT_FOUND,
+    followerCount: parsedFollowerCount || fields.followerCount.value || NOT_FOUND,
+    followerTier: followerTier || NOT_FOUND,
+    bio: fields.bio.value || NOT_FOUND,
+    email: fields.email.value || NOT_FOUND,
+    phone: fields.phone.value || NOT_FOUND,
+    niche: fields.niche.value || NOT_FOUND,
+    location: fields.location.value || NOT_FOUND,
+    notes: fields.notes.value || NOT_FOUND,
   };
 }
 
