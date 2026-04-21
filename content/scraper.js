@@ -46,6 +46,207 @@ function getProfileUrl() {
 }
 
 /**
+ * Reads the og:description meta value if present.
+ * @returns {string|null}
+ */
+function getOgDescriptionContent() {
+  const ogDesc = document.querySelector('meta[property="og:description"]');
+  const content = ogDesc?.getAttribute("content")?.trim();
+  return content || null;
+}
+
+/**
+ * Removes known Instagram boilerplate from meta descriptions.
+ * @param {string} text
+ * @returns {string}
+ */
+function stripInstagramBoilerplate(text) {
+  return text
+    .replace(/See Instagram photos and videos from.*$/i, "")
+    .replace(/Instagram:\s*/i, "")
+    .trim();
+}
+
+/**
+ * Cleans candidate bio text extracted from metadata/script payloads.
+ * @param {string|null} text
+ * @param {string|null} username
+ * @param {string|null} fullName
+ * @returns {string|null}
+ */
+function cleanBioCandidate(text, username, fullName) {
+  if (!text || typeof text !== "string") return null;
+
+  let candidate = text
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "\n")
+    .replace(/\u00A0/g, " ")
+    .replace(/See Instagram photos and videos from.*$/i, "")
+    .trim();
+
+  candidate = candidate
+    .replace(/^\s*[\d,.KkMm]+\s*followers?,\s*[\d,.KkMm]+\s*following,\s*[\d,.KkMm]+\s*posts?\s*-\s*/i, "")
+    .replace(/\s*\(@[^)]+\)\s*on Instagram\s*:??\s*/i, "")
+    .replace(/^\s*["'“”]+|["'“”]+\s*$/g, "")
+    .trim();
+
+  if (username) {
+    const escapedUsername = username.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    candidate = candidate
+      .replace(new RegExp(`\\(@${escapedUsername}\\)`, "ig"), "")
+      .replace(new RegExp(`(^|\\s)@${escapedUsername}(\\s|$)`, "ig"), " ")
+      .trim();
+  }
+
+  if (fullName) {
+    const escapedName = fullName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    candidate = candidate
+      .replace(new RegExp(`^${escapedName}\\s*[-:|]\\s*`, "i"), "")
+      .trim();
+  }
+
+  if (!candidate) return null;
+  if (/^(followers?|following|posts?)\b/i.test(candidate)) return null;
+
+  return candidate;
+}
+
+/**
+ * Attempts to infer biography text from og:description.
+ * @returns {string|null}
+ */
+function getBioFromOgDescription() {
+  const content = getOgDescriptionContent();
+  if (!content) return null;
+
+  const username = getUsername();
+  const fullName = getFullName();
+
+  const instagramPrefixMatch = content.match(/on Instagram\s*:\s*([\s\S]+)$/i);
+  if (instagramPrefixMatch?.[1]) {
+    const prefixed = cleanBioCandidate(instagramPrefixMatch[1], username, fullName);
+    if (prefixed) return prefixed;
+  }
+
+  const cleaned = stripInstagramBoilerplate(content);
+  if (!cleaned) return null;
+
+  const segments = cleaned
+    .split(" - ")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  const statSegmentRegex = /followers?|following|posts?/i;
+  for (let i = segments.length - 1; i >= 0; i--) {
+    const segment = segments[i];
+    if (!statSegmentRegex.test(segment) && !segment.includes("(@")) {
+      const candidate = cleanBioCandidate(segment, username, fullName);
+      if (candidate) return candidate;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Finds biography text embedded inside script payloads.
+ * @param {string|null} username
+ * @returns {string|null}
+ */
+function getBioFromScripts(username) {
+  const scripts = document.querySelectorAll("script");
+  const fullName = getFullName();
+
+  const extractDecodedBio = (sourceText, pattern) => {
+    const match = sourceText.match(pattern);
+    if (!match?.[1]) return null;
+    try {
+      return JSON.parse(`"${match[1]}"`).trim() || null;
+    } catch {
+      return null;
+    }
+  };
+
+  if (username) {
+    const escapedUsername = username.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    for (const script of scripts) {
+      const text = script.textContent || "";
+      const nearUsernameBio = new RegExp(
+        `"username":"${escapedUsername}"[\\s\\S]{0,6000}?"biography":"((?:\\\\.|[^"\\\\])*)"`
+      );
+      const nearUsernameRawBio = new RegExp(
+        `"username":"${escapedUsername}"[\\s\\S]{0,6000}?"biography_with_entities":\\{[\\s\\S]{0,500}?"raw_text":"((?:\\\\.|[^"\\\\])*)"`
+      );
+
+      const decodedNearUsername =
+        extractDecodedBio(text, nearUsernameRawBio) || extractDecodedBio(text, nearUsernameBio);
+      const cleanedNearUsername = cleanBioCandidate(decodedNearUsername, username, fullName);
+      if (cleanedNearUsername) {
+        return cleanedNearUsername;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Attempts to gather biography lines from the visible profile header.
+ * @param {string|null} username
+ * @param {string|null} fullName
+ * @returns {string|null}
+ */
+function getBioFromDom(username, fullName) {
+  const header = document.querySelector("main header") || document.querySelector("header");
+  if (!header) return null;
+
+  const blacklist = /followers?|following|posts?|message|follow|edit profile|contact|shop/i;
+  const candidates = new Set();
+  const nodes = header.querySelectorAll("section span, section div, section h1, section a");
+
+  for (const node of nodes) {
+    const rawText = node.textContent || "";
+    for (const line of rawText.split(/\r?\n/)) {
+      const text = line.trim();
+      if (!text) continue;
+      if (text.length < 3 || text.length > 300) continue;
+      if (blacklist.test(text)) continue;
+      if (username && text.toLowerCase() === username.toLowerCase()) continue;
+      if (fullName && text.toLowerCase() === fullName.toLowerCase()) continue;
+      if (text.startsWith("@")) continue;
+      if (/^[\d,.]+[KkMm]?$/.test(text)) continue;
+      candidates.add(text);
+    }
+  }
+
+  const joined = Array.from(candidates).slice(0, 4).join("\n").trim();
+  if (joined) return joined;
+
+  // Fallback: Instagram sometimes nests bio text in uncommon wrappers.
+  const lineCandidates = (header.innerText || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => line.length >= 3 && line.length <= 300)
+    .filter((line) => !blacklist.test(line))
+    .filter((line) => !(username && line.toLowerCase() === username.toLowerCase()))
+    .filter((line) => !(fullName && line.toLowerCase() === fullName.toLowerCase()))
+    .filter((line) => !line.startsWith("@"))
+    .filter((line) => !/^[\d,.]+[KkMm]?$/.test(line));
+
+  return lineCandidates.slice(0, 4).join("\n") || null;
+}
+
+/**
+ * Collects visible header text that can help contact extraction.
+ * @returns {string}
+ */
+function getHeaderTextForContactExtraction() {
+  const header = document.querySelector("main header") || document.querySelector("header");
+  return header?.innerText?.trim() || "";
+}
+
+/**
  * Extracts the full name from the Instagram profile page.
  * Tries meta og:title first, then falls back to DOM heading elements.
  *
@@ -105,47 +306,15 @@ function getFullName() {
  * @returns {string|null}
  */
 function getBio() {
-  // Strategy 1: og:description meta tag
-  const ogDesc = document.querySelector('meta[property="og:description"]');
-  if (ogDesc) {
-    const content = ogDesc.getAttribute("content");
-    if (content) {
-      // The description typically includes follower/following counts before the bio
-      // Format: "123 Followers, 45 Following, 67 Posts - See Instagram photos and videos from Name (@user)"
-      // Or sometimes the bio is directly in there
-      // Try to extract just the meaningful bio text
-      const parts = content.split(" - ");
-      if (parts.length > 1) {
-        // Return everything after the first dash (which has the descriptive part)
-        return parts.slice(1).join(" - ").trim();
-      }
-      return content.trim();
-    }
-  }
+  const username = getUsername();
+  const fullName = getFullName();
 
-  // Strategy 2: Look for the bio section in the DOM header area
-  const headerSection = document.querySelector("header");
-  if (headerSection) {
-    // Instagram's bio is usually in a div after the stats row
-    // Look for a section with longer text that isn't a count
-    const allDivs = headerSection.querySelectorAll("div");
-    for (const div of allDivs) {
-      const text = div.textContent.trim();
-      // Bio text is typically between 10 and 500 characters
-      if (
-        text.length > 10 &&
-        text.length < 500 &&
-        !text.includes("followers") &&
-        !text.includes("following") &&
-        !text.includes("posts") &&
-        div.children.length <= 5
-      ) {
-        return text;
-      }
-    }
-  }
-
-  return null;
+  return (
+    getBioFromScripts(username) ||
+    getBioFromOgDescription() ||
+    getBioFromDom(username, fullName) ||
+    null
+  );
 }
 
 /**
@@ -224,7 +393,7 @@ function extractPhoneFromText(text) {
  *
  * @returns {Object|null} - Partial profile data object, or null
  */
-function getJsonLdData() {
+function getJsonLdData(username) {
   const scripts = document.querySelectorAll(
     'script[type="application/ld+json"]'
   );
@@ -232,6 +401,19 @@ function getJsonLdData() {
     try {
       const data = JSON.parse(script.textContent);
       if (data && (data["@type"] === "Person" || data["@type"] === "ProfilePage")) {
+        const lowerUsername = username?.toLowerCase();
+        const url = (data.url || "").toLowerCase();
+        const alternateName = (data.alternateName || "").replace(/^@/, "").toLowerCase();
+        const sameProfile =
+          !lowerUsername ||
+          alternateName === lowerUsername ||
+          url.includes(`/instagram.com/${lowerUsername}/`) ||
+          url.includes(`/www.instagram.com/${lowerUsername}/`);
+
+        if (!sameProfile) {
+          continue;
+        }
+
         return {
           fullName: data.name || null,
           bio: data.description || null,
@@ -259,16 +441,19 @@ function scrapeProfileData() {
   const bio = getBio();
 
   // Try JSON-LD first for structured data
-  const jsonLdData = getJsonLdData();
+  const jsonLdData = getJsonLdData(username);
 
   // Assemble the profile data, preferring JSON-LD for supported fields
   const fullName = jsonLdData?.fullName || getFullName();
   const bioText = jsonLdData?.bio || bio;
   const followerCountRaw = getFollowerCount();
 
-  // Extract contact info from the full bio text (including og:description)
-  const ogDesc = document.querySelector('meta[property="og:description"]');
-  const fullBioText = [bioText, ogDesc?.getAttribute("content")]
+  // Extract contact info from combined profile text sources to improve hit rate.
+  const fullBioText = [
+    bioText,
+    getOgDescriptionContent(),
+    getHeaderTextForContactExtraction(),
+  ]
     .filter(Boolean)
     .join(" ");
 
