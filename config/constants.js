@@ -5,11 +5,11 @@
  */
 
 // Google OAuth2 Client ID — obtain from Google Cloud Console
-export const GOOGLE_CLIENT_ID = ""; // <-- Paste your OAuth2 Client ID here
+export const GOOGLE_CLIENT_ID = "19984992940-46pph6ig1nldsrikdgh0kupoamc4coot.apps.googleusercontent.com"; // <-- Paste your OAuth2 Client ID here
 
 // Google Sheet ID — found in the sheet URL:
 // https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit
-export const SHEET_ID = ""; // <-- Paste your Google Sheet ID here
+export const SHEET_ID = "19-RKGyE7iOUgjN_lzDqf_XWHKR3Mo_BJj8WaaEX7vQ8"; // <-- Paste your Google Sheet ID here
 
 // Default range for appending rows (appends after last row in Sheet1)
 export const SHEET_RANGE = "Sheet1!A:A";
@@ -33,8 +33,8 @@ export const NICHES = [
 
 // Follower tier definitions with min/max ranges
 export const TIERS = {
-  Nano:  { min: 1000,    max: 10000 },
-  Micro: { min: 10001,   max: 100000 },
-  Macro: { min: 100001,  max: 1000000 },
-  Mega:  { min: 1000001, max: Infinity },
+  Nano: { min: 1000, max: 10000 },
+  Micro: { min: 10001, max: 100000 },
+  Macro: { min: 100001, max: 1000000 },
+  Mega: { min: 1000001, max: Infinity },
 };
