@@ -14,7 +14,7 @@
     "https://sheets.googleapis.com/*"
   ],
   "oauth2": {
-    "client_id": "",
+    "client_id": "19984992940-1ki4hmavg0gfj2av8mb7a9cslsvnt3vj.apps.googleusercontent.com",
     "scopes": [
       "https://www.googleapis.com/auth/spreadsheets"
     ]
@@ -25,8 +25,12 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://www.instagram.com/*"],
-      "js": ["content/scraper.js"],
+      "matches": [
+        "https://www.instagram.com/*"
+      ],
+      "js": [
+        "content/scraper.js"
+      ],
       "run_at": "document_idle"
     }
   ],
